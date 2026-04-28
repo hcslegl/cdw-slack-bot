@@ -23,12 +23,11 @@ def get_order_info(customer_name: str) -> str:
 
         try:
             # ── Step 1: Log in ────────────────────────────────────────────────
-            page.goto(CDW_LOGIN_URL, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.goto(CDW_LOGIN_URL, wait_until="load")
+            page.wait_for_timeout(3000)
 
-            # Fill email — selector may need adjustment; saving a debug screenshot if it fails
             try:
-                page.fill('input[name="username"]', CDW_EMAIL, timeout=8000)
+                page.fill('input[name="UserName"]', CDW_EMAIL, timeout=8000)
             except PlaywrightTimeout:
                 _save_debug_screenshot(page, "debug_login.png")
                 raise RuntimeError(
@@ -36,13 +35,14 @@ def get_order_info(customer_name: str) -> str:
                     "A screenshot was saved to debug_login.png — check the selector."
                 )
 
-            page.fill('input[name="password"]', CDW_PASSWORD)
-            page.click('button[type="submit"]')
-            page.wait_for_load_state("networkidle", timeout=20000)
+            page.fill('input[name="PlainPassword"]', CDW_PASSWORD)
+            page.click('input[name="LogOnButton"]')
+            page.wait_for_load_state("load", timeout=20000)
+            page.wait_for_timeout(3000)
 
             # ── Step 2: Navigate to orders ───────────────────────────────────
-            page.goto(CDW_ORDERS_URL, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.goto(CDW_ORDERS_URL, wait_until="load")
+            page.wait_for_timeout(3000)
 
             # ── Step 3: Search by customer name ──────────────────────────────
             # Try common search input patterns; CDW uses a "Search by" or filter field
@@ -69,7 +69,7 @@ def get_order_info(customer_name: str) -> str:
                     "A screenshot was saved to debug_orders.png."
                 )
 
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_timeout(3000)
 
             # ── Step 4: Click the most recent (first) order ──────────────────
             order_link = None
@@ -96,7 +96,8 @@ def get_order_info(customer_name: str) -> str:
             # Grab order number and date from the row before clicking
             order_row_text = page.locator("table tbody tr:first-child").text_content() or ""
             order_link.click()
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.wait_for_load_state("load", timeout=15000)
+            page.wait_for_timeout(3000)
 
             # ── Step 5: Extract order header info ────────────────────────────
             order_number = _try_text(page, [
