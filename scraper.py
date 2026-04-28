@@ -1,14 +1,20 @@
 import os
+import json
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-CDW_EMAIL = os.environ.get("CDW_EMAIL", "")
-CDW_PASSWORD = os.environ.get("CDW_PASSWORD", "")
-
-CDW_LOGIN_URL = "https://www.cdw.com/account/logon"
+CDW_COOKIES_JSON = os.environ.get("CDW_COOKIES", "")
 CDW_ORDERS_URL = "https://www.cdw.com/account/orders"
 
 
 def get_order_info(customer_name: str) -> str:
+    if not CDW_COOKIES_JSON:
+        raise RuntimeError("CDW_COOKIES environment variable is not set.")
+
+    try:
+        cookies = json.loads(CDW_COOKIES_JSON)
+    except json.JSONDecodeError:
+        raise RuntimeError("CDW_COOKIES is not valid JSON. Re-export your cookies and update the variable.")
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
@@ -19,30 +25,22 @@ def get_order_info(customer_name: str) -> str:
             ),
             viewport={"width": 1280, "height": 800},
         )
+
+        # Load session cookies so we skip the login page entirely
+        context.add_cookies(cookies)
         page = context.new_page()
 
         try:
-            # ── Step 1: Log in ────────────────────────────────────────────────
-            page.goto(CDW_LOGIN_URL, wait_until="load")
-            page.wait_for_timeout(3000)
-
-            try:
-                page.fill('input[name="UserName"]', CDW_EMAIL, timeout=8000)
-            except PlaywrightTimeout:
-                _save_debug_screenshot(page, "debug_login.png")
-                raise RuntimeError(
-                    "Could not find the email field on the login page. "
-                    "A screenshot was saved to debug_login.png — check the selector."
-                )
-
-            page.fill('input[name="PlainPassword"]', CDW_PASSWORD)
-            page.click('input[name="LogOnButton"]')
-            page.wait_for_load_state("load", timeout=20000)
-            page.wait_for_timeout(3000)
-
-            # ── Step 2: Navigate to orders ───────────────────────────────────
+            # ── Step 1: Navigate directly to orders ──────────────────────────
             page.goto(CDW_ORDERS_URL, wait_until="load")
             page.wait_for_timeout(3000)
+
+            # If cookies expired we'll land back on the login page
+            if "logon" in page.url.lower():
+                raise RuntimeError(
+                    "CDW session has expired. Please re-export your cookies from Chrome "
+                    "and update the CDW_COOKIES variable in Railway."
+                )
 
             # ── Step 3: Search by customer name ──────────────────────────────
             # Try common search input patterns; CDW uses a "Search by" or filter field
