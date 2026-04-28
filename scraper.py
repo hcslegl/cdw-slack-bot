@@ -3,7 +3,7 @@ import json
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 CDW_COOKIES_JSON = os.environ.get("CDW_COOKIES", "")
-CDW_ORDERS_URL = "https://www.cdw.com/account/orders"
+CDW_ORDERS_URL = "https://www.cdw.com/accountcenter/orders/all"
 
 
 def get_order_info(customer_name: str) -> str:
@@ -56,7 +56,7 @@ def get_order_info(customer_name: str) -> str:
         try:
             # ── Step 1: Navigate directly to orders ──────────────────────────
             page.goto(CDW_ORDERS_URL, wait_until="load")
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(4000)
 
             # If cookies expired we'll land back on the login page
             if "logon" in page.url.lower():
@@ -65,25 +65,23 @@ def get_order_info(customer_name: str) -> str:
                     "and update the CDW_COOKIES variable in Railway."
                 )
 
-            # ── Step 3: Search by customer name ──────────────────────────────
-            # Try common search input patterns; CDW uses a "Search by" or filter field
-            search_filled = False
-            for selector in [
-                'input[placeholder*="Search"]',
-                'input[placeholder*="search"]',
-                'input[aria-label*="search" i]',
-                'input[name*="search" i]',
-                'input[id*="search" i]',
-            ]:
+            # Dismiss any welcome popups
+            for sel in ['button[aria-label*="close" i]', 'button[aria-label*="dismiss" i]',
+                        '.modal-close', '.popup-close', 'button.close', '[data-dismiss="modal"]']:
                 try:
-                    page.fill(selector, customer_name, timeout=3000)
-                    page.keyboard.press("Enter")
-                    search_filled = True
-                    break
-                except PlaywrightTimeout:
-                    continue
+                    btn = page.locator(sel).first
+                    if btn.is_visible():
+                        btn.click()
+                        page.wait_for_timeout(1000)
+                        break
+                except Exception:
+                    pass
 
-            if not search_filled:
+            # ── Step 2: Search by customer name ──────────────────────────────
+            try:
+                page.fill('input[placeholder="Search Orders."]', customer_name, timeout=8000)
+                page.keyboard.press("Enter")
+            except PlaywrightTimeout:
                 _save_debug_screenshot(page, "debug_orders.png")
                 raise RuntimeError(
                     "Could not find the order search field. "
