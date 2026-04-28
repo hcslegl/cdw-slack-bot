@@ -11,9 +11,32 @@ def get_order_info(customer_name: str) -> str:
         raise RuntimeError("CDW_COOKIES environment variable is not set.")
 
     try:
-        cookies = json.loads(CDW_COOKIES_JSON)
+        raw_cookies = json.loads(CDW_COOKIES_JSON)
     except json.JSONDecodeError:
         raise RuntimeError("CDW_COOKIES is not valid JSON. Re-export your cookies and update the variable.")
+
+    # Normalize cookies to the format Playwright expects
+    same_site_map = {
+        "no_restriction": "None",
+        "unspecified": "None",
+        "lax": "Lax",
+        "strict": "Strict",
+        "none": "None",
+    }
+    cookies = []
+    for c in raw_cookies:
+        cookie = {
+            "name": c["name"],
+            "value": c["value"],
+            "domain": c.get("domain", ".cdw.com"),
+            "path": c.get("path", "/"),
+            "secure": c.get("secure", False),
+            "httpOnly": c.get("httpOnly", False),
+            "sameSite": same_site_map.get(str(c.get("sameSite", "")).lower(), "None"),
+        }
+        if "expirationDate" in c:
+            cookie["expires"] = c["expirationDate"]
+        cookies.append(cookie)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
