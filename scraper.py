@@ -155,53 +155,34 @@ def get_order_info(customer_name: str) -> str:
 def _extract_items(page) -> list[tuple[str, str]]:
     """
     Returns a list of (item_name, tracking_number) tuples.
-    Tries multiple selector patterns to handle CDW page variations.
+    Uses CDW's order detail page structure where:
+    - Product name is in a link pointing to /shop/products/default.aspx
+    - Tracking number is in a link with class narvar-tracking-modal
+    Each table row may have multiple tracking links (multiple shipments).
     """
     items = []
 
-    # Pattern A: table rows with product name and tracking in cells
-    rows = page.locator("table.order-items tbody tr, table.line-items tbody tr").all()
-    if rows:
-        for row in rows:
-            cells = row.locator("td").all()
-            if len(cells) < 2:
-                continue
-            name = cells[0].text_content().strip()
-            # Find a cell that looks like it has a tracking number (UPS/FedEx/USPS format)
-            tracking = ""
-            for cell in cells[1:]:
-                text = cell.text_content().strip()
-                if _looks_like_tracking(text):
-                    tracking = text
-                    break
-                # Also check for links with tracking text
-                link = cell.locator("a[href*='tracking'], a[href*='track']").first
-                try:
-                    tracking = link.text_content(timeout=500).strip()
-                    if tracking:
-                        break
-                except Exception:
-                    pass
-            if name:
-                items.append((name, tracking))
-        if items:
-            return items
+    # Find all rows that contain a product link
+    rows = page.locator("table tr").all()
+    for row in rows:
+        # Check if this row has a product link
+        product_links = row.locator("a[href*='/shop/products/default.aspx']").all()
+        if not product_links:
+            continue
 
-    # Pattern B: card/list style items
-    item_blocks = page.locator(
-        ".line-item, .order-item, [data-testid='line-item'], .product-row"
-    ).all()
-    for block in item_blocks:
-        name = _try_text(block, [
-            ".product-name", ".item-description", ".product-title",
-            "[data-testid='product-name']", "h3", "h4",
-        ]) or ""
-        tracking = _try_text(block, [
-            ".tracking-number", "[data-testid='tracking-number']",
-            "a[href*='tracking']", "a[href*='track']",
-        ]) or ""
-        if name:
-            items.append((name.strip(), tracking.strip()))
+        name = product_links[0].text_content().strip()
+        if not name:
+            continue
+
+        # Find all tracking links in this row
+        tracking_links = row.locator("a.narvar-tracking-modal, a[href*='TrackShipment']").all()
+        if tracking_links:
+            for t_link in tracking_links:
+                tracking = t_link.text_content().strip()
+                if tracking:
+                    items.append((name, tracking))
+        else:
+            items.append((name, ""))
 
     return items
 
