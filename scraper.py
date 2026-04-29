@@ -79,7 +79,7 @@ def get_order_info(customer_name: str) -> str:
 
             # ── Step 2: Search by customer name ──────────────────────────────
             try:
-                page.fill('input[placeholder="Search Orders."]', customer_name, timeout=8000)
+                page.fill('input[aria-label="Search Orders in Grid"]', customer_name, timeout=8000)
                 page.keyboard.press("Enter")
             except PlaywrightTimeout:
                 _save_debug_screenshot(page, "debug_orders.png")
