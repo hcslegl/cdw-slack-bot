@@ -91,30 +91,25 @@ def get_order_info(customer_name: str) -> str:
             page.wait_for_timeout(3000)
 
             # ── Step 4: Click the most recent (first) order ──────────────────
-            order_link = None
-            for selector in [
-                "table tbody tr:first-child a",
-                ".order-list .order-item:first-child a",
-                "[data-testid='order-row']:first-child a",
-                ".orders-table tr:nth-child(2) a",  # skip header row
-            ]:
-                try:
-                    order_link = page.locator(selector).first
-                    order_link.wait_for(timeout=5000)
-                    break
-                except PlaywrightTimeout:
-                    order_link = None
-
-            if order_link is None:
+            # DevExtreme grid uses aria-rowindex on data rows
+            first_row = page.locator("tr[aria-rowindex='1']").first
+            try:
+                first_row.wait_for(timeout=8000)
+            except PlaywrightTimeout:
                 _save_debug_screenshot(page, "debug_order_list.png")
                 raise RuntimeError(
                     f"No orders found for '{customer_name}', or could not locate order rows. "
                     "A screenshot was saved to debug_order_list.png."
                 )
 
-            # Grab order number and date from the row before clicking
-            order_row_text = page.locator("table tbody tr:first-child").text_content() or ""
-            order_link.click()
+            # Try clicking a link inside the row, or the row itself
+            order_link = first_row.locator("a").first
+            try:
+                order_link.wait_for(timeout=3000)
+                order_link.click()
+            except PlaywrightTimeout:
+                first_row.click()
+
             page.wait_for_load_state("load", timeout=15000)
             page.wait_for_timeout(3000)
 
