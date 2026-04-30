@@ -165,12 +165,17 @@ def _extract_items(page) -> list[tuple[str, str]]:
     # Find all rows that contain a product link
     rows = page.locator("table tr").all()
     for row in rows:
-        # Check if this row has a product link
+        # Check if this row has a product link (skip image-only links)
         product_links = row.locator("a[href*='/shop/products/default.aspx']").all()
         if not product_links:
             continue
 
-        name = product_links[0].text_content().strip()
+        name = ""
+        for pl in product_links:
+            text = pl.text_content().strip()
+            if text:
+                name = text
+                break
         if not name:
             continue
 
