@@ -47,13 +47,14 @@ def _login(page):
 
     try:
         page.fill(
+            'input[name="username"], input[id*="username" i], input[name*="username" i], '
             'input[type="email"], input[name="email"], input[id*="email" i], input[name*="email" i]',
             email,
             timeout=8000,
         )
     except PlaywrightTimeout:
         _save_debug_screenshot(page, "debug_login.png")
-        raise RuntimeError("Could not find the email field on the CDW login page.")
+        raise RuntimeError("Could not find the username/email field on the CDW login page.")
 
     try:
         page.fill(
