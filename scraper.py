@@ -1,28 +1,20 @@
 import os
 import json
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from session import get_cookies, set_cookies
 
-CDW_COOKIES_JSON = os.environ.get("CDW_COOKIES", "")
 CDW_ORDERS_URL = "https://www.cdw.com/accountcenter/orders/all"
 
+_SAME_SITE_MAP = {
+    "no_restriction": "None",
+    "unspecified": "None",
+    "lax": "Lax",
+    "strict": "Strict",
+    "none": "None",
+}
 
-def get_order_info(customer_name: str) -> str:
-    if not CDW_COOKIES_JSON:
-        raise RuntimeError("CDW_COOKIES environment variable is not set.")
 
-    try:
-        raw_cookies = json.loads(CDW_COOKIES_JSON)
-    except json.JSONDecodeError:
-        raise RuntimeError("CDW_COOKIES is not valid JSON. Re-export your cookies and update the variable.")
-
-    # Normalize cookies to the format Playwright expects
-    same_site_map = {
-        "no_restriction": "None",
-        "unspecified": "None",
-        "lax": "Lax",
-        "strict": "Strict",
-        "none": "None",
-    }
+def _normalize_cookies(raw_cookies: list) -> list:
     cookies = []
     for c in raw_cookies:
         cookie = {
@@ -32,11 +24,60 @@ def get_order_info(customer_name: str) -> str:
             "path": c.get("path", "/"),
             "secure": c.get("secure", False),
             "httpOnly": c.get("httpOnly", False),
-            "sameSite": same_site_map.get(str(c.get("sameSite", "")).lower(), "None"),
+            "sameSite": _SAME_SITE_MAP.get(str(c.get("sameSite", "")).lower(), "None"),
         }
         if "expirationDate" in c:
             cookie["expires"] = c["expirationDate"]
+        elif "expires" in c:
+            cookie["expires"] = c["expires"]
         cookies.append(cookie)
+    return cookies
+
+
+def _login(page):
+    """Log into CDW using CDW_EMAIL and CDW_PASSWORD env vars."""
+    email = os.environ.get("CDW_EMAIL", "")
+    password = os.environ.get("CDW_PASSWORD", "")
+
+    if not email or not password:
+        raise RuntimeError(
+            "CDW session expired and CDW_EMAIL/CDW_PASSWORD env vars are not set. "
+            "Add these to Railway to enable auto-login."
+        )
+
+    try:
+        page.fill(
+            'input[type="email"], input[name="email"], input[id*="email" i], input[name*="email" i]',
+            email,
+            timeout=8000,
+        )
+    except PlaywrightTimeout:
+        _save_debug_screenshot(page, "debug_login.png")
+        raise RuntimeError("Could not find the email field on the CDW login page.")
+
+    try:
+        page.fill(
+            'input[type="password"], input[name="password"], input[id*="password" i]',
+            password,
+            timeout=8000,
+        )
+    except PlaywrightTimeout:
+        _save_debug_screenshot(page, "debug_login.png")
+        raise RuntimeError("Could not find the password field on the CDW login page.")
+
+    page.keyboard.press("Enter")
+    page.wait_for_load_state("load", timeout=15000)
+    page.wait_for_timeout(3000)
+
+    if "logon" in page.url.lower() or "login" in page.url.lower():
+        _save_debug_screenshot(page, "debug_login.png")
+        raise RuntimeError(
+            "CDW login failed. Check that CDW_EMAIL and CDW_PASSWORD are correct in Railway."
+        )
+
+
+def get_order_info(customer_name: str) -> str:
+    raw_cookies = get_cookies()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -49,21 +90,27 @@ def get_order_info(customer_name: str) -> str:
             viewport={"width": 1280, "height": 800},
         )
 
-        # Load session cookies so we skip the login page entirely
-        context.add_cookies(cookies)
+        if raw_cookies:
+            context.add_cookies(_normalize_cookies(raw_cookies))
+
         page = context.new_page()
 
         try:
-            # ── Step 1: Navigate directly to orders ──────────────────────────
+            # ── Step 1: Navigate to orders ───────────────────────────────────
             page.goto(CDW_ORDERS_URL, wait_until="load")
             page.wait_for_timeout(4000)
 
-            # If cookies expired we'll land back on the login page
-            if "logon" in page.url.lower():
-                raise RuntimeError(
-                    "CDW session has expired. Please re-export your cookies from Chrome "
-                    "and update the CDW_COOKIES variable in Railway."
-                )
+            # ── Step 2: Auto-login if session expired ────────────────────────
+            if "logon" in page.url.lower() or "login" in page.url.lower():
+                _login(page)
+
+                # Cache the fresh session cookies so subsequent requests are faster
+                fresh_cookies = context.cookies()
+                if fresh_cookies:
+                    set_cookies(json.dumps(fresh_cookies))
+
+                page.goto(CDW_ORDERS_URL, wait_until="load")
+                page.wait_for_timeout(4000)
 
             # Dismiss any welcome popups
             for sel in ['button[aria-label*="close" i]', 'button[aria-label*="dismiss" i]',
@@ -77,7 +124,7 @@ def get_order_info(customer_name: str) -> str:
                 except Exception:
                     pass
 
-            # ── Step 2: Search by customer name ──────────────────────────────
+            # ── Step 3: Search by customer name ──────────────────────────────
             try:
                 page.fill('input[aria-label="Search Orders in Grid"]', customer_name, timeout=8000)
                 page.keyboard.press("Enter")
@@ -91,7 +138,6 @@ def get_order_info(customer_name: str) -> str:
             page.wait_for_timeout(3000)
 
             # ── Step 4: Click the most recent (first) order ──────────────────
-            # DevExtreme grid uses aria-rowindex on data rows
             first_row = page.locator("tr[aria-rowindex='1']").first
             try:
                 first_row.wait_for(timeout=8000)
@@ -102,7 +148,6 @@ def get_order_info(customer_name: str) -> str:
                     "A screenshot was saved to debug_order_list.png."
                 )
 
-            # Try clicking a link inside the row, or the row itself
             order_link = first_row.locator("a").first
             try:
                 order_link.wait_for(timeout=3000)
@@ -162,10 +207,8 @@ def _extract_items(page) -> list[tuple[str, str]]:
     """
     items = []
 
-    # Find all rows that contain a product link
     rows = page.locator("table tr").all()
     for row in rows:
-        # Check if this row has a product link (skip image-only links)
         product_links = row.locator("a[href*='/shop/products/default.aspx']").all()
         if not product_links:
             continue
@@ -179,7 +222,6 @@ def _extract_items(page) -> list[tuple[str, str]]:
         if not name:
             continue
 
-        # Find all tracking links in this row
         tracking_links = row.locator("a.narvar-tracking-modal, a[href*='TrackShipment']").all()
         if tracking_links:
             for t_link in tracking_links:

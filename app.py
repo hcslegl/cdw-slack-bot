@@ -2,14 +2,17 @@ import os
 import hmac
 import hashlib
 import time
+import json
 import threading
 import requests
 from flask import Flask, request, jsonify
 from scraper import get_order_info
+from session import set_cookies
 
 app = Flask(__name__)
 
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 
 
 def verify_slack_signature(req):
@@ -55,6 +58,102 @@ def track_order():
     thread.start()
 
     return jsonify({"text": f":mag: Looking up orders for *{name}*..."})
+
+
+@app.route("/refreshsession", methods=["POST"])
+def refresh_session():
+    if not verify_slack_signature(request):
+        return jsonify({"error": "Invalid signature"}), 403
+
+    trigger_id = request.form.get("trigger_id")
+
+    modal = {
+        "trigger_id": trigger_id,
+        "view": {
+            "type": "modal",
+            "callback_id": "refresh_session_modal",
+            "title": {"type": "plain_text", "text": "Refresh CDW Session"},
+            "submit": {"type": "plain_text", "text": "Update Cookies"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            "*Steps to refresh your session:*\n"
+                            "1. Log into CDW in Chrome\n"
+                            "2. Click the *Cookie-Editor* extension\n"
+                            "3. Click *Export* → *Export as JSON*\n"
+                            "4. Paste the copied JSON below"
+                        ),
+                    },
+                },
+                {
+                    "type": "input",
+                    "block_id": "cookies_block",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "cookies_input",
+                        "multiline": True,
+                        "placeholder": {
+                            "type": "plain_text",
+                            "text": "Paste cookie JSON here...",
+                        },
+                    },
+                    "label": {"type": "plain_text", "text": "Cookie JSON"},
+                },
+            ],
+        },
+    }
+
+    resp = requests.post(
+        "https://slack.com/api/views.open",
+        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+        json=modal,
+    )
+
+    if not resp.json().get("ok"):
+        return jsonify({"text": f":warning: Could not open modal: {resp.json().get('error')}"}), 200
+
+    return jsonify({}), 200
+
+
+@app.route("/slack/interactions", methods=["POST"])
+def slack_interactions():
+    if not verify_slack_signature(request):
+        return jsonify({"error": "Invalid signature"}), 403
+
+    payload = json.loads(request.form.get("payload", "{}"))
+
+    if payload.get("type") == "view_submission" and payload.get("view", {}).get("callback_id") == "refresh_session_modal":
+        cookies_json = (
+            payload["view"]["state"]["values"]["cookies_block"]["cookies_input"]["value"] or ""
+        ).strip()
+
+        try:
+            set_cookies(cookies_json)
+        except ValueError as e:
+            return jsonify({
+                "response_action": "errors",
+                "errors": {"cookies_block": str(e)},
+            })
+
+        # Notify the user in Slack
+        user_id = payload.get("user", {}).get("id", "")
+        if user_id and SLACK_BOT_TOKEN:
+            requests.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+                json={
+                    "channel": user_id,
+                    "text": ":white_check_mark: CDW session cookies updated successfully!",
+                },
+            )
+
+        return jsonify({"response_action": "clear"})
+
+    return jsonify({}), 200
 
 
 @app.route("/health", methods=["GET"])
