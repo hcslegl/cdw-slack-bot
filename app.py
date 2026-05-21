@@ -7,7 +7,7 @@ import threading
 import requests
 from flask import Flask, request, jsonify
 from scraper import get_order_info
-from session import set_cookies
+from session import set_cookies, get_cookies
 
 app = Flask(__name__)
 
@@ -154,6 +154,26 @@ def slack_interactions():
         return jsonify({"response_action": "clear"})
 
     return jsonify({}), 200
+
+
+@app.route("/internal/refresh-cookies", methods=["POST"])
+def internal_refresh_cookies():
+    secret = os.environ.get("REFRESH_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    if not secret or not hmac.compare_digest(auth, f"Bearer {secret}"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    cookies = data.get("cookies", [])
+    if not cookies:
+        return jsonify({"error": "No cookies provided"}), 400
+
+    try:
+        set_cookies(json.dumps(cookies))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"ok": True, "count": len(cookies)})
 
 
 @app.route("/health", methods=["GET"])
