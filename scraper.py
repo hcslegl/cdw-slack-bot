@@ -1,6 +1,7 @@
 import os
 import json
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from playwright_stealth import stealth_sync
 from session import get_cookies, set_cookies
 
 CDW_ORDERS_URL = "https://www.cdw.com/accountcenter/orders/all"
@@ -107,6 +108,7 @@ def get_order_info(customer_name: str) -> str:
             context.add_cookies(_normalize_cookies(raw_cookies))
 
         page = context.new_page()
+        stealth_sync(page)
 
         try:
             # ── Step 1: Navigate to orders ───────────────────────────────────
