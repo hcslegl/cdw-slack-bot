@@ -66,14 +66,26 @@ def _login(page):
         _save_debug_screenshot(page, "debug_login.png")
         raise RuntimeError("Could not find the password field on the CDW login page.")
 
-    page.keyboard.press("Enter")
+    # Try clicking the submit button first, fall back to Enter
+    try:
+        submit = page.locator(
+            'button[type="submit"], input[type="submit"], button:has-text("Sign In"), '
+            'button:has-text("Log In"), button:has-text("Login")'
+        ).first
+        submit.wait_for(timeout=3000)
+        submit.click()
+    except Exception:
+        page.keyboard.press("Enter")
+
     page.wait_for_load_state("load", timeout=15000)
     page.wait_for_timeout(3000)
 
+    _save_debug_screenshot(page, "debug_post_login.png")
+
     if "logon" in page.url.lower() or "login" in page.url.lower():
-        _save_debug_screenshot(page, "debug_login.png")
         raise RuntimeError(
-            "CDW login failed. Check that CDW_EMAIL and CDW_PASSWORD are correct in Railway."
+            "CDW login failed — saved debug_post_login.png. "
+            "This may be due to MFA, a CAPTCHA, or incorrect credentials in Railway."
         )
 
 
