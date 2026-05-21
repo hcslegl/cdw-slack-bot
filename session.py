@@ -2,7 +2,7 @@ import os
 import json
 
 _RUNTIME_COOKIES = None
-_CACHE_FILE = "/tmp/runtime_cookies.json"
+_CACHE_FILE = "/data/runtime_cookies.json"
 
 
 def get_cookies() -> list | None:
