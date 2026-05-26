@@ -5,6 +5,7 @@ Run on a schedule via launchd so the bot never loses its session.
 """
 import os
 import json
+import time
 import requests
 import browser_cookie3
 
@@ -13,6 +14,9 @@ REFRESH_SECRET = os.environ.get("CDW_REFRESH_SECRET", "")
 
 
 def main():
+    # Wait for Chrome and Keychain to be fully ready after login
+    time.sleep(60)
+
     if not REFRESH_SECRET:
         print("ERROR: CDW_REFRESH_SECRET env var is not set.")
         return
