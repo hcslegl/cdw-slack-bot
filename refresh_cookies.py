@@ -23,7 +23,7 @@ def main():
 
     # Read CDW cookies from Chrome
     try:
-        jar = browser_cookie3.chrome(domain_name=".cdw.com")
+        jar = browser_cookie3.chrome(domain_name="cdw.com")
     except Exception as e:
         print(f"ERROR: Could not read Chrome cookies: {e}")
         return
