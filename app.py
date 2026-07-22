@@ -38,11 +38,13 @@ def process_and_respond(name, response_url):
         result = get_order_info(name)
         payload = {"text": result, "response_type": "in_channel"}
     except RuntimeError as e:
+        print(f"[ERROR] RuntimeError for '{name}': {e}", flush=True)
         if "CDW login failed" in str(e):
             payload = {"text": ":warning: The CDW order lookup is temporarily unavailable. Please contact *Henry Slegl* or the *IT Help Desk* for assistance."}
         else:
             payload = {"text": f":warning: Error looking up orders for *{name}*: {e}"}
     except Exception as e:
+        print(f"[ERROR] Exception for '{name}': {e}", flush=True)
         payload = {"text": f":warning: Error looking up orders for *{name}*: {e}"}
     requests.post(response_url, json=payload)
 
