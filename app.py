@@ -65,13 +65,7 @@ def track_order():
     return jsonify({"text": f":mag: Looking up orders for *{name}*..."})
 
 
-@app.route("/refreshsession", methods=["POST"])
-def refresh_session():
-    if not verify_slack_signature(request):
-        return jsonify({"error": "Invalid signature"}), 403
-
-    trigger_id = request.form.get("trigger_id")
-
+def open_refresh_modal(trigger_id):
     modal = {
         "trigger_id": trigger_id,
         "view": {
@@ -111,15 +105,23 @@ def refresh_session():
             ],
         },
     }
-
-    resp = requests.post(
+    requests.post(
         "https://slack.com/api/views.open",
         headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
         json=modal,
     )
 
-    if not resp.json().get("ok"):
-        return jsonify({"text": f":warning: Could not open modal: {resp.json().get('error')}"}), 200
+
+@app.route("/refreshsession", methods=["POST"])
+def refresh_session():
+    if not verify_slack_signature(request):
+        return jsonify({"error": "Invalid signature"}), 403
+
+    trigger_id = request.form.get("trigger_id")
+
+    thread = threading.Thread(target=open_refresh_modal, args=(trigger_id,))
+    thread.daemon = True
+    thread.start()
 
     return jsonify({}), 200
 
