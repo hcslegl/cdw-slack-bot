@@ -170,7 +170,7 @@ def get_order_info(customer_name: str) -> str:
             except PlaywrightTimeout:
                 first_row.click()
 
-            page.wait_for_load_state("load", timeout=15000)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
             page.wait_for_timeout(3000)
 
             # ── Step 5: Extract order header info ────────────────────────────
