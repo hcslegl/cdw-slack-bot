@@ -11,7 +11,7 @@ import requests
 
 RAILWAY_URL = "https://cdw-slack-bot-production.up.railway.app"
 REFRESH_SECRET = os.environ.get("CDW_REFRESH_SECRET", "")
-CDP_URL = "http://localhost:9222"
+CDP_URL = "http://127.0.0.1:9222"
 
 
 def get_cdw_cookies():
