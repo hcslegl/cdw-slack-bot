@@ -1,6 +1,7 @@
 #!/bin/bash
-# Refreshes the CDW tab in Chrome to keep the session alive,
-# then immediately pushes the updated cookies to Railway.
+# Refreshes the CDW tab in Chrome every hour to keep the session alive.
+# This prevents CDW from timing out the session due to inactivity,
+# keeping the cookies pushed via /refreshsession valid indefinitely.
 osascript <<'EOF'
 tell application "Google Chrome"
     repeat with w in windows
@@ -12,9 +13,3 @@ tell application "Google Chrome"
     end repeat
 end tell
 EOF
-
-# Wait for Chrome to receive fresh cookies from CDW after the page reloads
-sleep 10
-
-# Push the fresh cookies to Railway
-/usr/bin/python3 /Users/toast-it-devices/cdw-slack-bot/refresh_cookies.py
